@@ -90,21 +90,11 @@
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
-        
+
         const bufferLength = analyser.fftSize;
         const dataArray = new Uint8Array(bufferLength);
         source.connect(analyser);
-        
-        let minInterval = 50;     // fastest (high volume)
-        let maxInterval = 800;    // slowest (silence)
-        let defaultInterval = 500;
-        
-        function updateInterval(rms) {
-          // map RMS to strobe interval between min and max
-          let volume = Math.min(Math.max(rms, 0), 1); // clamp 0-1
-          return maxInterval - volume * (maxInterval - minInterval);
-        }
-        
+
         function animate() {
           analyser.getByteTimeDomainData(dataArray);
           let sumSquares = 0;
@@ -113,26 +103,20 @@
             sumSquares += normalized * normalized;
           }
           const rms = Math.sqrt(sumSquares / bufferLength);
-          
-          const newInterval = updateInterval(rms);
-          
-          // If interval has changed significantly, reset the strobe
-          if (Math.abs(newInterval - interval) > 10) {
-            interval = newInterval;
-            clearInterval(strobeInterval);
-            strobeInterval = setInterval(() => {
-              document.body.style.backgroundColor = on ? colorOn : colorOff;
-              on = !on;
-            }, interval);
+
+          if (rms > 0.1) {
+            document.body.style.backgroundColor = 'white';
+            setTimeout(() => {
+              document.body.style.backgroundColor = 'black';
+            }, 50);
           }
-          
+
           if (isSoundMode) requestAnimationFrame(animate);
         }
-        
+
         animate();
       }).catch(err => {
-        alert('Microphone access denied.');
-        console.error(err);
+        alert('Microphone access failed.');
         isSoundMode = false;
         updateBPM(bpm);
       });
