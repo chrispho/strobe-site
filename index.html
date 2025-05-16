@@ -7,46 +7,77 @@
     html, body {
       margin: 0;
       padding: 0;
-      width: 100%;
       height: 100%;
-      min-height: 100vh;
       background-color: black;
       transition: background-color 0.05s;
-      display: block;
+      font-family: sans-serif;
     }
-    #controls {
+
+    #settingsToggle {
       position: absolute;
-      top: 20px;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      cursor: pointer;
+      z-index: 10;
+    }
+
+    #settingsPanel {
+      position: absolute;
+      top: 50px;
+      right: 10px;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 1em;
+      border-radius: 8px;
+      display: none;
+      z-index: 10;
       text-align: center;
     }
-    input[type=range] {
-      width: 200px;
+
+    input[type="number"] {
+      width: 80px;
+      margin-top: 0.5em;
+      padding: 4px;
     }
+
     button {
       margin-top: 10px;
-      padding: 0.5em 1em;
+      padding: 6px 12px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <div id="controls">
-    <div>
-      <label>BPM: <span id="bpmDisplay">120</span></label><br>
-      <input type="range" id="bpmSlider" min="30" max="1000" value="120">
-    </div>
-    <button id="modeToggle">Switch to Sound Mode</button>
+
+  <button id="settingsToggle">⚙️ Settings</button>
+
+  <div id="settingsPanel">
+    <label for="bpmInput">BPM:</label><br>
+    <input type="number" id="bpmInput" value="120" min="30" max="300" /><br>
+    <button id="modeToggle">Switch to Sound Mode</button><br>
+    <button id="syncBtn">🔄 Sync</button>
   </div>
 
   <script>
     let bpm = 120;
-    let interval = 500; // ms, initially set from BPM
+    let interval = (60 / bpm) * 1000;
     let strobeInterval;
     let isSoundMode = false;
     let on = false;
 
-    const bpmSlider = document.getElementById("bpmSlider");
-    const bpmDisplay = document.getElementById("bpmDisplay");
+    const bpmInput = document.getElementById("bpmInput");
     const modeToggle = document.getElementById("modeToggle");
+    const settingsToggle = document.getElementById("settingsToggle");
+    const settingsPanel = document.getElementById("settingsPanel");
+    const syncBtn = document.getElementById("syncBtn");
+
+    settingsToggle.addEventListener("click", () => {
+      settingsPanel.style.display = settingsPanel.style.display === "block" ? "none" : "block";
+    });
 
     function startBPMStrobe() {
       clearInterval(strobeInterval);
@@ -56,11 +87,13 @@
       }, interval);
     }
 
-    bpmSlider.addEventListener("input", () => {
-      bpm = parseInt(bpmSlider.value);
-      bpmDisplay.textContent = bpm;
-      interval = (60 / bpm) * 1000;
-      if (!isSoundMode) startBPMStrobe();
+    bpmInput.addEventListener("input", () => {
+      const val = parseInt(bpmInput.value);
+      if (!isNaN(val) && val > 0) {
+        bpm = val;
+        interval = (60 / bpm) * 1000;
+        if (!isSoundMode) startBPMStrobe();
+      }
     });
 
     modeToggle.addEventListener("click", () => {
@@ -75,44 +108,55 @@
       }
     });
 
+    syncBtn.addEventListener("click", () => {
+      if (!isSoundMode) {
+        on = false; // force reset to black
+        document.body.style.backgroundColor = "black";
+        startBPMStrobe();
+      }
+    });
+
     function startSoundReactive() {
       navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-        const context = new (window.AudioContext || window.webkitAudioContext)();
-        const source = context.createMediaStreamSource(stream);
-        const analyser = context.createAnalyser();
-        source.connect(analyser);
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
 
-        const data = new Uint8Array(analyser.fftSize);
+        const bufferLength = analyser.fftSize;
+        const dataArray = new Uint8Array(bufferLength);
+        source.connect(analyser);
 
-        function detectSound() {
-          analyser.getByteTimeDomainData(data);
-          let total = 0;
-          for (let i = 0; i < data.length; i++) {
-            const val = (data[i] - 128) / 128;
-            total += val * val;
+        function animate() {
+          analyser.getByteTimeDomainData(dataArray);
+          let sumSquares = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            const normalized = (dataArray[i] - 128) / 128;
+            sumSquares += normalized * normalized;
           }
-          const rms = Math.sqrt(total / data.length);
+          const rms = Math.sqrt(sumSquares / bufferLength);
+
           if (rms > 0.1) {
-            document.body.style.backgroundColor = "white";
+            document.body.style.backgroundColor = 'white';
             setTimeout(() => {
-              document.body.style.backgroundColor = "black";
+              document.body.style.backgroundColor = 'black';
             }, 50);
           }
-          if (isSoundMode) requestAnimationFrame(detectSound);
+
+          if (isSoundMode) requestAnimationFrame(animate);
         }
 
-        detectSound();
+        animate();
       }).catch(err => {
-        alert("Mic access denied or not available.");
+        alert('Microphone access denied or not available.');
+        console.error(err);
         isSoundMode = false;
         modeToggle.textContent = "Switch to Sound Mode";
         startBPMStrobe();
       });
     }
 
-    // Initial start
-    interval = (60 / bpm) * 1000;
+    // Start with BPM mode
     startBPMStrobe();
   </script>
 </body>
