@@ -1,132 +1,110 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Strobe Light</title>
+  <meta charset="UTF-8">
+  <title>Strobe Display</title>
   <style>
     html, body {
       margin: 0;
-      padding: 0;
       height: 100%;
       background-color: black;
       transition: background-color 0.05s;
-      font-family: sans-serif;
     }
-
-    #settingsToggle {
+    #openSettings {
       position: absolute;
       top: 10px;
-      right: 10px;
-      background: rgba(0,0,0,0.7);
+      left: 10px;
+      z-index: 999;
+      background: rgba(0,0,0,0.6);
       color: white;
+      padding: 0.5em 1em;
       border: none;
-      padding: 6px 12px;
-      cursor: pointer;
-      z-index: 10;
-    }
-
-    #settingsPanel {
-      position: absolute;
-      top: 50px;
-      right: 10px;
-      background: rgba(0,0,0,0.8);
-      color: white;
-      padding: 1em;
-      border-radius: 8px;
-      display: none;
-      z-index: 10;
-      text-align: center;
-    }
-
-    input[type="number"] {
-      width: 80px;
-      margin-top: 0.5em;
-      padding: 4px;
-    }
-
-    button {
-      margin-top: 10px;
-      padding: 6px 12px;
       cursor: pointer;
     }
   </style>
 </head>
 <body>
-
-  <button id="settingsToggle">⚙️ Settings</button>
-
-  <div id="settingsPanel">
-    <label for="bpmInput">BPM:</label><br>
-    <input type="number" id="bpmInput" value="120" min="30" max="300" /><br>
-    <button id="modeToggle">Switch to Sound Mode</button><br>
-    <button id="syncBtn">🔄 Sync</button>
-  </div>
-
+  
+  <button id="openSettings">⚙️ Open Settings</button>
+  
   <script>
     let bpm = 120;
     let interval = (60 / bpm) * 1000;
-    let strobeInterval;
     let isSoundMode = false;
+    let strobeInterval;
     let on = false;
-
-    const bpmInput = document.getElementById("bpmInput");
-    const modeToggle = document.getElementById("modeToggle");
-    const settingsToggle = document.getElementById("settingsToggle");
-    const settingsPanel = document.getElementById("settingsPanel");
-    const syncBtn = document.getElementById("syncBtn");
-
-    settingsToggle.addEventListener("click", () => {
-      settingsPanel.style.display = settingsPanel.style.display === "block" ? "none" : "block";
+    let settingsWindow = null;
+    
+    let colorOn = "#ffffff";   // flash color
+    let colorOff = "#000000";  // background color
+    
+    function applyColors() {
+      document.body.style.backgroundColor = colorOff;
+    }
+    
+    // Update colors from settings
+    window.addEventListener("message", (event) => {
+      const { type, value } = event.data;
+      if (type === "setBPM") updateBPM(value);
+      else if (type === "toggleMode") {
+        isSoundMode = value;
+        if (isSoundMode) {
+          clearInterval(strobeInterval);
+          startSoundReactive();
+        } else {
+          startBPMStrobe();
+        }
+      }
+      else if (type === "sync") syncStrobe();
+      else if (type === "setColors") {
+        colorOn = value.on;
+        colorOff = value.off;
+        applyColors();
+      }
     });
-
+    
+    
     function startBPMStrobe() {
       clearInterval(strobeInterval);
       strobeInterval = setInterval(() => {
-        document.body.style.backgroundColor = on ? "black" : "white";
+        document.body.style.backgroundColor = on ? colorOn : colorOff;
         on = !on;
       }, interval);
     }
-
-    bpmInput.addEventListener("input", () => {
-      const val = parseInt(bpmInput.value);
-      if (!isNaN(val) && val > 0) {
-        bpm = val;
-        interval = (60 / bpm) * 1000;
-        if (!isSoundMode) startBPMStrobe();
-      }
-    });
-
-    modeToggle.addEventListener("click", () => {
-      isSoundMode = !isSoundMode;
-      modeToggle.textContent = isSoundMode ? "Switch to BPM Mode" : "Switch to Sound Mode";
-
-      if (isSoundMode) {
-        clearInterval(strobeInterval);
-        startSoundReactive();
-      } else {
-        startBPMStrobe();
-      }
-    });
-
-    syncBtn.addEventListener("click", () => {
-      if (!isSoundMode) {
-        on = false; // force reset to black
-        document.body.style.backgroundColor = "black";
-        startBPMStrobe();
-      }
-    });
-
+    
+    function updateBPM(newBPM) {
+      bpm = newBPM;
+      interval = (60 / bpm) * 1000;
+      if (!isSoundMode) startBPMStrobe();
+    }
+    
+    function syncStrobe() {
+      on = false;
+      document.body.style.backgroundColor = colorOn;
+      startBPMStrobe();
+    }
+    
     function startSoundReactive() {
       navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
-
+        
         const bufferLength = analyser.fftSize;
         const dataArray = new Uint8Array(bufferLength);
         source.connect(analyser);
-
+        
+        let minInterval = 50;     // fastest (high volume)
+        let maxInterval = 800;    // slowest (silence)
+        let defaultInterval = 500;
+        
+        function updateInterval(rms) {
+          // map RMS to strobe interval between min and max
+          let volume = Math.min(Math.max(rms, 0), 1); // clamp 0-1
+          return maxInterval - volume * (maxInterval - minInterval);
+        }
+        
         function animate() {
           analyser.getByteTimeDomainData(dataArray);
           let sumSquares = 0;
@@ -135,29 +113,61 @@
             sumSquares += normalized * normalized;
           }
           const rms = Math.sqrt(sumSquares / bufferLength);
-
-          if (rms > 0.1) {
-            document.body.style.backgroundColor = 'white';
-            setTimeout(() => {
-              document.body.style.backgroundColor = 'black';
-            }, 50);
+          
+          const newInterval = updateInterval(rms);
+          
+          // If interval has changed significantly, reset the strobe
+          if (Math.abs(newInterval - interval) > 10) {
+            interval = newInterval;
+            clearInterval(strobeInterval);
+            strobeInterval = setInterval(() => {
+              document.body.style.backgroundColor = on ? colorOn : colorOff;
+              on = !on;
+            }, interval);
           }
-
+          
           if (isSoundMode) requestAnimationFrame(animate);
         }
-
+        
         animate();
       }).catch(err => {
-        alert('Microphone access denied or not available.');
+        alert('Microphone access denied.');
         console.error(err);
         isSoundMode = false;
-        modeToggle.textContent = "Switch to Sound Mode";
-        startBPMStrobe();
+        updateBPM(bpm);
       });
     }
-
-    // Start with BPM mode
-    startBPMStrobe();
+    
+    
+    // Open settings in new window
+    document.getElementById("openSettings").addEventListener("click", () => {
+      if (!settingsWindow || settingsWindow.closed) {
+        settingsWindow = window.open("settings.html", "Settings", "width=300,height=400");
+      } else {
+        settingsWindow.focus();
+      }
+    });
+    
+    // Handle messages from settings window
+    window.addEventListener("message", (event) => {
+      const { type, value } = event.data;
+      if (type === "setBPM") updateBPM(value);
+      else if (type === "toggleMode") {
+        isSoundMode = value;
+        if (isSoundMode) {
+          clearInterval(strobeInterval);
+          startSoundReactive();
+        } else {
+          startBPMStrobe();
+        }
+      }
+      else if (type === "sync") syncStrobe();
+    });
+    
+    
+    
+    // Start default strobe
+    updateBPM(bpm);
   </script>
 </body>
 </html>

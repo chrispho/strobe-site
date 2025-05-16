@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Strobe Settings</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: white;
+      padding: 1em;
+      text-align: center;
+    }
+    input, button {
+      margin-top: 0.5em;
+      padding: 0.5em;
+      font-size: 1em;
+    }
+    .row {
+      margin-top: 1em;
+    }
+  </style>
+</head>
+<body>
+  <h2>Strobe Settings</h2>
+  
+  <div class="row">
+    <label>Flash Color: <input type="color" id="colorOn" value="#ffffff"></label><br>
+    <label>Background: <input type="color" id="colorOff" value="#000000"></label>
+  </div>
+  
+  <label for="bpmInput">BPM:</label><br>
+  <input type="number" id="bpmInput" value="120" min="1"><br>
+  
+  <div class="row">
+    <button onclick="adjustBPM(0.5)">✖️0.5</button>
+    <button onclick="adjustBPM(2)">✖️2</button>
+  </div>
+  
+  <div class="row">
+    <button id="modeToggle">Switch to Sound Mode</button><br>
+    <button onclick="sync()">🔄 Sync</button>
+  </div>
+  
+  <script>
+    let isSound = false;
+    const bpmInput = document.getElementById("bpmInput");
+    const modeToggle = document.getElementById("modeToggle");
+    
+    const colorOnInput = document.getElementById("colorOn");
+    const colorOffInput = document.getElementById("colorOff");
+    
+    function sendColors() {
+      window.opener.postMessage({
+        type: "setColors",
+        value: {
+          on: colorOnInput.value,
+          off: colorOffInput.value
+        }
+      }, "*");
+    }
+    
+    colorOnInput.addEventListener("input", sendColors);
+    colorOffInput.addEventListener("input", sendColors);
+    
+    bpmInput.addEventListener("input", () => {
+      const bpm = parseInt(bpmInput.value);
+      if (!isNaN(bpm) && bpm > 0) {
+        window.opener.postMessage({ type: "setBPM", value: bpm }, "*");
+      }
+    });
+    
+    function adjustBPM(multiplier) {
+      let bpm = parseInt(bpmInput.value);
+      bpm = Math.max(1, Math.floor(bpm * multiplier));
+      bpmInput.value = bpm;
+      window.opener.postMessage({ type: "setBPM", value: bpm }, "*");
+    }
+    
+    modeToggle.addEventListener("click", () => {
+      isSound = !isSound;
+      modeToggle.textContent = isSound ? "Switch to BPM Mode" : "Switch to Sound Mode";
+      window.opener.postMessage({ type: "toggleMode", value: isSound }, "*");
+    });
+    
+    function sync() {
+      window.opener.postMessage({ type: "sync" }, "*");
+    }
+  </script>
+</body>
+</html>
